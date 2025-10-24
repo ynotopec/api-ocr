@@ -1,30 +1,56 @@
-Bonjour Antonio 👋
+# DeepSeek OCR API
 
-J’ai préparé une **API FastAPI “prod-ready”** pour `deepseek-ai/DeepSeek-OCR` avec :
+API FastAPI "prod-ready" pour orchestrer le modèle [`deepseek-ai/DeepSeek-OCR`](https://huggingface.co/deepseek-ai/DeepSeek-OCR) avec deux backends interchangeables (Transformers et vLLM), gestion de la concurrence, probes K8S et métriques Prometheus.
 
-* backends **Transformers (par défaut)** et **vLLM** (nightly officiel)
-* endpoints `/ocr` (images), `/ocr/pdf` (PDF→pages), `/healthz`, `/readyz`, `/metrics`
-* presets de taille (tiny/small/base/large/**gundam**) et **prompt Markdown** par défaut
-* limites/concurrence, CORS, Prometheus, Dockerfiles **GPU** & **CPU (dev)**
+## Fonctionnalités clés
 
-➡️ Tout le code, Dockerfiles et README sont dans le **canvas** à droite.
+- **Backends interchangeables** : `BACKEND=transformers` (par défaut) ou `BACKEND=vllm`.
+- **Endpoints prêts pour la prod** : `/ocr`, `/ocr/pdf`, `/healthz`, `/readyz`, `/metrics`.
+- **Contrôle de la concurrence** via sémaphore asynchrone (`MAX_CONCURRENCY`).
+- **Prompts & presets** : prise en charge des tailles `tiny/small/base/large/gundam` et options de sampling.
+- **Support PDF** (optionnel) basé sur `pypdfium2` + `Pillow` avec contrôle des pages.
+- **Instrumentation Prometheus** prête pour Grafana via `prometheus-fastapi-instrumentator`.
+- **Dockerfiles GPU & CPU** optimisés pour Torch 2.6 / CUDA 12.4.
 
-Quelques repères importants (source modèle) :
-
-* Chargement **HF Transformers** + `flash-attn` avec l’API `model.infer(...)`, presets et prompt recommandés. ([huggingface.co][1])
-* **Support vLLM officiel** (guide + snippet) pour batch/latence améliorés. ([huggingface.co][1])
-
-### Démarrage express (GPU)
+## Installation locale
 
 ```bash
-docker build -t deepseek-ocr-api -f Dockerfile.gpu .
-docker run --rm --gpus all -p 8000:8000 \
-  -e BACKEND=transformers -e TORCH_DTYPE=bf16 deepseek-ocr-api
+python -m venv .venv
+source .venv/bin/activate
+pip install -U pip
+pip install -e .[pdf,transformers]  # ou ajouter [vllm] selon le backend souhaité
 ```
 
-### Appels rapides
+> ℹ️ `flash-attn` nécessite une machine Linux + GPU compatible. Pour CPU/dev, installez uniquement `[pdf]`.
 
-* Image → Markdown :
+## Lancer l'API
+
+```bash
+uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+ou
+
+```bash
+python -m app
+```
+
+### Variables d'environnement principales
+
+| Variable | Par défaut | Description |
+| --- | --- | --- |
+| `BACKEND` | `transformers` | Backend d'inférence (`transformers` ou `vllm`). |
+| `MODEL_ID` | `deepseek-ai/DeepSeek-OCR` | Modèle Hugging Face à charger. |
+| `TORCH_DTYPE` | `bf16` | Précision pour le backend Transformers/vLLM. |
+| `MAX_CONCURRENCY` | `2` | Nombre de requêtes concurrentes maximum. |
+| `ENABLE_PDF_SUPPORT` | `1` | Active la conversion PDF→images (nécessite `pypdfium2`). |
+| `PDF_MAX_PAGES` | `20` | Limite dure de pages converties par requête. |
+| `METRICS_ENABLED` | `1` | Active `/metrics` (Prometheus). |
+| `CORS_ALLOW_ORIGINS` | _(vide)_ | Liste CSV des origines autorisées.
+
+## Exemples d'appels
+
+### Image → Markdown
 
 ```bash
 curl -s http://localhost:8000/ocr -H 'Content-Type: application/json' -d '{
@@ -34,7 +60,7 @@ curl -s http://localhost:8000/ocr -H 'Content-Type: application/json' -d '{
 }' | jq -r '.results[0].text'
 ```
 
-* PDF (pages 1–5) :
+### PDF (pages 1–5)
 
 ```bash
 curl -s http://localhost:8000/ocr/pdf -H 'Content-Type: application/json' -d '{
@@ -44,14 +70,56 @@ curl -s http://localhost:8000/ocr/pdf -H 'Content-Type: application/json' -d '{
 }'
 ```
 
-### Notes “best practice”
+## Tests & lint
 
-* **CUDA 12.4 + Torch 2.6.0 cu124** dans l’image GPU (cohérent avec les wheels récentes).
-* **flash-attn 2.7.3** activé (`_attn_implementation='flash_attention_2'`) comme sur la fiche HF. ([huggingface.co][1])
-* **vLLM** : passer `BACKEND=vllm` si tu veux pousser le throughput en batch (nightly ≥ 2025-10-23). ([huggingface.co][1])
-* **Probes** K8S prêtes (`/healthz`, `/readyz`) + **Prometheus** (`/metrics`).
-* Concurrency process via sémaphore → scale horizontal recommandé sous K8S (HPA).
+```bash
+pip install -e .[develop]
+pytest
+ruff check app
+```
 
-Tu veux que je t’ajoute un **chart Helm minimal** (IngressClass `public`) + `values.yaml` pour ton cluster ?
+## Conteneurs Docker
 
-[1]: https://huggingface.co/deepseek-ai/DeepSeek-OCR "deepseek-ai/DeepSeek-OCR · Hugging Face"
+### GPU (Transformers par défaut)
+
+```bash
+docker build -t deepseek-ocr-api -f Dockerfile.gpu .
+docker run --rm --gpus all -p 8000:8000 \
+  -e BACKEND=transformers -e TORCH_DTYPE=bf16 deepseek-ocr-api
+```
+
+### CPU/dev (moins de dépendances)
+
+```bash
+docker build -t deepseek-ocr-api-dev -f Dockerfile.cpu .
+docker run --rm -p 8000:8000 deepseek-ocr-api-dev
+```
+
+## Diagramme d'architecture
+
+```mermaid
+graph TD
+    Client((Client)) -->|JSON request| FastAPI{{"FastAPI App"}}
+    subgraph Routers
+        FastAPI -->|/ocr| OCR[OCR Router]
+        FastAPI -->|/ocr/pdf| PDF[PDF Router]
+        FastAPI -->|/readyz| Ready[Readiness Probe]
+        FastAPI -->|/healthz| Health[Liveness Probe]
+        FastAPI -->|/metrics| Metrics[Prometheus Metrics]
+    end
+    OCR -->|Télécharge images| HTTP[Downloader async]
+    PDF -->|Télécharge PDF| HTTP
+    PDF -->|Rasterise| PDFUtil[PDF Utils]
+    HTTP -->|octets| Backend
+    PDFUtil -->|PNG| Backend
+    Backend -->|Infer| Engine[(Transformers ou vLLM)]
+    Engine -->|Markdown| Response[Réponse JSON]
+    Response -->|JSON| Client
+```
+
+## Ressources complémentaires
+
+- [Diagramme détaillé dans `docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+- [Fiche Hugging Face officielle](https://huggingface.co/deepseek-ai/DeepSeek-OCR)
+- [Documentation vLLM](https://docs.vllm.ai/)
+- [Guide Prometheus FastAPI Instrumentator](https://github.com/trallard/prometheus-fastapi-instrumentator)
