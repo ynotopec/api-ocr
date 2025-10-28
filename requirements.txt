@@ -22,3 +22,5 @@ easydict
 
 # Optional GPU acceleration (install manually when running on supported hardware)
 # flash-attn==2.7.3
+
+accelerate>=0.26.0
