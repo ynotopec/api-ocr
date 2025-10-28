@@ -36,21 +36,34 @@ def _normalize_torch_dtype(dtype_name: str) -> str:
 
 
 def _reorder_loader_for_deepseek(
-    loader_order: list[Any], architectures: list[str], preferred: tuple[Any, ...]
+    loader_order: list[Any],
+    architectures: list[str],
+    preferred: tuple[Any, ...],
+    *,
+    model_type: str | None = None,
 ) -> list[Any]:
     """Prioritise loaders for DeepSeek checkpoints.
 
     The DeepSeek OCR models expose bespoke causal LM heads which break when the
-    generic ``AutoModelForVision2Seq`` loader is used. When the architecture
-    hints that we are dealing with a DeepSeek checkpoint, prefer the loaders
-    listed in ``preferred`` (typically ``AutoModelForCausalLM``) to avoid runtime
+    generic ``AutoModelForVision2Seq`` loader is used. When the configuration
+    hints that we are dealing with a DeepSeek checkpoint (either via the
+    ``architectures`` metadata or the ``model_type``), prefer the loaders listed
+    in ``preferred`` (typically ``AutoModelForCausalLM``) to avoid runtime
     warnings and load errors.
     """
 
-    if not architectures:
+    candidates = [str(arch) for arch in architectures]
+    if model_type:
+        candidates.append(model_type)
+
+    if not candidates:
         return loader_order
 
-    if not any(str(arch).lower().startswith("deepseekocr") for arch in architectures):
+    def _is_deepseek(name: str) -> bool:
+        normalised = name.lower().replace("-", "").replace("_", "")
+        return "deepseekocr" in normalised or "deepseekvl" in normalised
+
+    if not any(_is_deepseek(candidate) for candidate in candidates):
         return loader_order
 
     preferred_order: list[Any] = []
@@ -173,6 +186,7 @@ class TransformersOCRBackend(BaseOCRBackend):
             loader_order,
             list(architectures),
             preferred=(AutoModelForCausalLM, AutoModelForVision2Seq),
+            model_type=getattr(config, "model_type", None),
         )
 
         last_error: Exception | None = None
