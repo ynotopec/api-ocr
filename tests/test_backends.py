@@ -55,3 +55,14 @@ def test_reorder_loader_for_deepseek_uses_model_type_hint():
     )
 
     assert reordered == [AutoModelForCausalLM, AutoModelForVision2Seq, AutoModel]
+
+
+def test_reorder_loader_for_deepseek_inserts_missing_preferred_loaders():
+    loader_order = [AutoModelForVision2Seq]
+    reordered = _reorder_loader_for_deepseek(
+        loader_order,
+        ["DeepSeekOCRForConditionalGeneration"],
+        preferred=(AutoModelForCausalLM, AutoModelForVision2Seq),
+    )
+
+    assert reordered == [AutoModelForCausalLM, AutoModelForVision2Seq]

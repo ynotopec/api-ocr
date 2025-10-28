@@ -68,7 +68,7 @@ def _reorder_loader_for_deepseek(
 
     preferred_order: list[Any] = []
     for loader in preferred:
-        if loader in loader_order:
+        if loader not in preferred_order:
             preferred_order.append(loader)
 
     preferred_order.extend(loader for loader in loader_order if loader not in preferred_order)
