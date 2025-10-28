@@ -43,3 +43,15 @@ def test_reorder_loader_for_deepseek_noop_for_other_architectures():
     )
 
     assert reordered == loader_order
+
+
+def test_reorder_loader_for_deepseek_uses_model_type_hint():
+    loader_order = [AutoModelForVision2Seq, AutoModelForCausalLM, AutoModel]
+    reordered = _reorder_loader_for_deepseek(
+        loader_order,
+        [],
+        preferred=(AutoModelForCausalLM, AutoModelForVision2Seq),
+        model_type="deepseek_vl_v2",
+    )
+
+    assert reordered == [AutoModelForCausalLM, AutoModelForVision2Seq, AutoModel]
