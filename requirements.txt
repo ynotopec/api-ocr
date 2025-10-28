@@ -1,4 +1,4 @@
-fastapi>=0.109.0
+astapi>=0.109.0
 uvicorn[standard]>=0.27.0
 httpx>=0.27.0
 pydantic[email]>=1.10.13,<2
@@ -17,6 +17,7 @@ torch==2.6.0
 transformers==4.46.3
 tokenizers==0.20.3
 einops
-addict 
+addict
 easydict
-pip install flash-attn==2.7.3 --no-build-isolation
+
+flash-attn==2.7.3
