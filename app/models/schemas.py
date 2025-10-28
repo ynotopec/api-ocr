@@ -41,6 +41,36 @@ class OCRInput(BaseModel):
     urls: list[AnyHttpUrl] = Field(..., min_items=1, description="List of image URLs to process.")
     mode: Optional[OCRMode] = None
 
+    @validator("urls", pre=True)
+    def _reject_unexpanded_placeholders(
+        cls, value: list[str] | list[AnyHttpUrl] | None
+    ) -> list[str] | list[AnyHttpUrl]:
+        """Raise a helpful error when the payload contains shell placeholders.
+
+        Users often wrap the JSON payload passed to ``curl`` in single quotes,
+        which prevents the shell from expanding ``${variable}`` placeholders.
+        The resulting literal value (``"${url}"``) fails validation with a
+        confusing ``AnyHttpUrl`` error. By detecting the placeholder pattern
+        early we can produce a clearer message that nudges the caller towards
+        quoting the payload correctly.
+        """
+
+        if value is None:
+            return value
+
+        if not isinstance(value, (list, tuple)):
+            raise ValueError("urls must be provided as a list of HTTP URLs")
+
+        for raw in value:
+            if isinstance(raw, str) and "${" in raw and "}" in raw:
+                raise ValueError(
+                    "urls contains what looks like an unexpanded shell variable. "
+                    "If you are using curl, wrap the JSON body in double quotes "
+                    "so that ${...} placeholders are replaced before sending the request."
+                )
+
+        return list(value)
+
     @validator("prompt")
     def _validate_prompt(cls, value: str) -> str:
         if "<image>" not in value:
