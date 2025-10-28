@@ -71,7 +71,7 @@ class TransformersOCRBackend(BaseOCRBackend):
                 "transformers is not available. Install it or switch BACKEND=vllm."
             )
 
-        from transformers import AutoProcessor, AutoTokenizer, pipeline
+        from transformers import AutoModel, AutoProcessor, AutoTokenizer, pipeline
 
         try:
             torch = importlib.import_module("torch")
@@ -83,29 +83,33 @@ class TransformersOCRBackend(BaseOCRBackend):
         if dtype is None:  # pragma: no cover - user misconfiguration
             raise BackendNotAvailable(f"Unsupported torch dtype: {self.settings.torch_dtype}")
 
+        common_kwargs = {
+            "revision": self.settings.model_revision,
+            "token": self.settings.hf_token,
+            "trust_remote_code": self.settings.trust_remote_code,
+        }
+
         processor = AutoProcessor.from_pretrained(
             self.settings.model_id,
-            revision=self.settings.model_revision,
-            token=self.settings.hf_token,
-            trust_remote_code=self.settings.trust_remote_code,
+            **common_kwargs,
         )
         tokenizer = AutoTokenizer.from_pretrained(
             self.settings.model_id,
-            revision=self.settings.model_revision,
-            token=self.settings.hf_token,
-            trust_remote_code=self.settings.trust_remote_code,
+            **common_kwargs,
+        )
+        model = AutoModel.from_pretrained(
+            self.settings.model_id,
+            torch_dtype=dtype,
+            device_map=self.settings.device_map,
+            **common_kwargs,
         )
 
         self._pipeline = pipeline(
             "image-to-text",
-            model=self.settings.model_id,
-            revision=self.settings.model_revision,
-            token=self.settings.hf_token,
-            torch_dtype=dtype,
-            device_map=self.settings.device_map,
-            trust_remote_code=self.settings.trust_remote_code,
+            model=model,
             processor=processor,
             tokenizer=tokenizer,
+            trust_remote_code=self.settings.trust_remote_code,
         )
         return self._pipeline
 
