@@ -18,10 +18,13 @@ API FastAPI "prod-ready" pour orchestrer le modèle [`deepseek-ai/DeepSeek-OCR`]
 python -m venv .venv
 source .venv/bin/activate
 pip install -U pip
+pip install -r requirements.txt  # dépendances de base + support PDF
 pip install -e .[pdf,transformers]  # ou ajouter [vllm] selon le backend souhaité
 ```
 
 > ℹ️ `flash-attn` nécessite une machine Linux + GPU compatible. Pour CPU/dev, installez uniquement `[pdf]`.
+> ℹ️ Le paquet PyPI `sklearn` est déprécié : si vous avez besoin de fonctions liées à scikit-learn,
+> installez le paquet `scikit-learn` (déjà référencé dans `requirements.txt`).
 
 ## Lancer l'API
 
