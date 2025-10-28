@@ -15,6 +15,23 @@ class BackendNotAvailable(RuntimeError):
     """Raised when a requested backend cannot be used."""
 
 
+TORCH_DTYPE_ALIASES = {
+    "bf16": "bfloat16",
+    "bfloat16": "bfloat16",
+    "fp16": "float16",
+    "float16": "float16",
+    "fp32": "float32",
+    "float32": "float32",
+}
+
+
+def _normalize_torch_dtype(dtype_name: str) -> str:
+    """Return the canonical torch dtype attribute name for ``dtype_name``."""
+
+    key = dtype_name.lower()
+    return TORCH_DTYPE_ALIASES.get(key, dtype_name)
+
+
 @dataclass
 class BackendMetadata:
     name: str
@@ -61,7 +78,8 @@ class TransformersOCRBackend(BaseOCRBackend):
         except ModuleNotFoundError as exc:  # pragma: no cover - runtime guard
             raise BackendNotAvailable("torch is not installed") from exc
 
-        dtype = getattr(torch, self.settings.torch_dtype, None)
+        dtype_name = _normalize_torch_dtype(self.settings.torch_dtype)
+        dtype = getattr(torch, dtype_name, None)
         if dtype is None:  # pragma: no cover - user misconfiguration
             raise BackendNotAvailable(f"Unsupported torch dtype: {self.settings.torch_dtype}")
 
@@ -142,7 +160,7 @@ class VLLMOCRBackend(BaseOCRBackend):
             tensor_parallel_size=self.settings.vllm_tensor_parallel_size,
             gpu_memory_utilization=self.settings.vllm_gpu_memory_utilization,
             trust_remote_code=self.settings.trust_remote_code,
-            dtype=self.settings.torch_dtype,
+            dtype=_normalize_torch_dtype(self.settings.torch_dtype),
         )
         self._sampling_cls = SamplingParams
         return self._engine
