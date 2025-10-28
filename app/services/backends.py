@@ -77,7 +77,14 @@ class TransformersOCRBackend(BaseOCRBackend):
                 "transformers is not available. Install it or switch BACKEND=vllm."
             )
 
-        from transformers import AutoModelForCausalLM, AutoModelForVision2Seq, AutoProcessor, AutoTokenizer
+        from transformers import (
+            AutoConfig,
+            AutoModel,
+            AutoModelForCausalLM,
+            AutoModelForVision2Seq,
+            AutoProcessor,
+            AutoTokenizer,
+        )
 
         try:
             torch = importlib.import_module("torch")
@@ -104,12 +111,35 @@ class TransformersOCRBackend(BaseOCRBackend):
             **common_kwargs,
         )
 
+        try:
+            config = AutoConfig.from_pretrained(
+                self.settings.model_id,
+                **common_kwargs,
+            )
+        except Exception as exc:  # pragma: no cover - configuration load failures
+            raise BackendNotAvailable(str(exc)) from exc
+
         if tokenizer.pad_token is None and tokenizer.eos_token is not None:
             tokenizer.pad_token = tokenizer.eos_token
 
+        loader_order: list[Any] = []
+        auto_map = getattr(config, "auto_map", None)
+        if isinstance(auto_map, dict):
+            if "AutoModelForVision2Seq" in auto_map:
+                loader_order.append(AutoModelForVision2Seq)
+            if "AutoModelForCausalLM" in auto_map:
+                loader_order.append(AutoModelForCausalLM)
+            if "AutoModel" in auto_map:
+                loader_order.append(AutoModel)
+
+        # Fall back to the default order if the config does not expose auto_map
+        # information for the specialised loaders.
+        if not loader_order:
+            loader_order = [AutoModelForVision2Seq, AutoModelForCausalLM, AutoModel]
+
         last_error: Exception | None = None
         model = None
-        for loader in (AutoModelForVision2Seq, AutoModelForCausalLM):
+        for loader in loader_order:
             try:
                 model = loader.from_pretrained(
                     self.settings.model_id,
@@ -121,6 +151,10 @@ class TransformersOCRBackend(BaseOCRBackend):
             except Exception as exc:  # pragma: no cover - exercised via fallback
                 last_error = exc
                 continue
+
+        if model is not None and not hasattr(model, "generate"):
+            last_error = AttributeError("Loaded model does not provide a 'generate' method")
+            model = None
 
         if model is None:  # pragma: no cover - propagation of underlying error
             assert last_error is not None
