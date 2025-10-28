@@ -10,3 +10,4 @@ scikit-learn>=1.0.0
 addict
 matplotlib
 torchvision
+einops
