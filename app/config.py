@@ -94,6 +94,13 @@ class Settings(BaseSettings):
         env_file_encoding = "utf-8"
         case_sensitive = False
 
+        @classmethod
+        def parse_env_var(cls, field_name: str, raw_value: str | None):  # type: ignore[override]
+            if field_name == "cors_allow_origins" and isinstance(raw_value, str):
+                # Defer parsing to validators so comma-separated lists are supported.
+                return raw_value
+            return BaseSettings.Config.parse_env_var(field_name, raw_value)
+
     @validator("cors_allow_origins", pre=True)
     def _split_origins(cls, value: str | list[str] | None) -> list[str]:
         if not value:

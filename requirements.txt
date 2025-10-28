@@ -20,4 +20,5 @@ einops
 addict
 easydict
 
-flash-attn==2.7.3
+# Optional GPU acceleration (install manually when running on supported hardware)
+# flash-attn==2.7.3
