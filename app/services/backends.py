@@ -35,6 +35,33 @@ def _normalize_torch_dtype(dtype_name: str) -> str:
     return TORCH_DTYPE_ALIASES.get(key, dtype_name)
 
 
+def _reorder_loader_for_deepseek(
+    loader_order: list[Any], architectures: list[str], preferred: tuple[Any, ...]
+) -> list[Any]:
+    """Prioritise loaders for DeepSeek checkpoints.
+
+    The DeepSeek OCR models expose bespoke causal LM heads which break when the
+    generic ``AutoModelForVision2Seq`` loader is used. When the architecture
+    hints that we are dealing with a DeepSeek checkpoint, prefer the loaders
+    listed in ``preferred`` (typically ``AutoModelForCausalLM``) to avoid runtime
+    warnings and load errors.
+    """
+
+    if not architectures:
+        return loader_order
+
+    if not any(str(arch).lower().startswith("deepseekocr") for arch in architectures):
+        return loader_order
+
+    preferred_order: list[Any] = []
+    for loader in preferred:
+        if loader in loader_order:
+            preferred_order.append(loader)
+
+    preferred_order.extend(loader for loader in loader_order if loader not in preferred_order)
+    return preferred_order
+
+
 @dataclass
 class BackendMetadata:
     name: str
@@ -136,6 +163,17 @@ class TransformersOCRBackend(BaseOCRBackend):
         # information for the specialised loaders.
         if not loader_order:
             loader_order = [AutoModelForVision2Seq, AutoModelForCausalLM, AutoModel]
+
+        # The DeepSeek checkpoints expose specialised architectures that rely on
+        # the causal language modelling heads. Prioritise the causal loader so we
+        # do not attempt to instantiate the vision2seq variant which triggers a
+        # warning (and can fail on some Transformers releases).
+        architectures = getattr(config, "architectures", None) or []
+        loader_order = _reorder_loader_for_deepseek(
+            loader_order,
+            list(architectures),
+            preferred=(AutoModelForCausalLM, AutoModelForVision2Seq),
+        )
 
         last_error: Exception | None = None
         model = None
